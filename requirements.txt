@@ -1,0 +1,28 @@
+# Exact versions of the development run (Linux x86-64, Python 3.12, CUDA 12.4). Byte-identical CSVs need this stack:
+# with other torch / OpenCV builds the base pipeline's CPU stages can give different candidates.
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+numpy==2.5.2
+pandas==3.0.6   # Linux development stack; the macOS final-cpu checks of the README ran with pandas 2.3.3
+pyarrow==23.0.1   # parquet tables (pandas.read_parquet / to_parquet); tested with 23.0.1 (macOS, final-cpu) and 26.0.0 (Linux, candidate table)
+opencv-python-headless==5.0.0.93
+pycocotools==2.0.11
+scikit-learn==1.8.0
+segmentation-models-pytorch==0.5.0
+ultralytics==8.4.172
+pyyaml==6.0.3
+pytest
+scipy==1.18.1
+scikit-image==0.26.0
+timm==1.0.30
+pillow==12.3.0
+# V-ENS verifier (configs/nlv.yaml; also the verifier of the final model); these versions reproduce the submitted scores exactly
+# (macOS arm64, Python 3.12). The NLv members verifier_nlv_{gbdt,et}.joblib are scikit-learn 1.8.0 pickles.
+catboost==1.2.10
+xgboost==3.4.1
+# rubric metrics (filament_seg/metrics.rubric: the host's mean Dice = torchmetrics.segmentation.DiceScore)
+torchmetrics==1.9.0
+# Optional, only for retraining / re-running the detector families (not needed by the CPU stages; see THIRD_PARTY_NOTICES.md):
+#   detectron2 (commit 247691a) + MaskDINO (commit 3831d85): Mask DINO, Cascade Mask R-CNN, S15F feature extraction
+#   rfdetr==1.11.1: RF-DETR-Seg Large;  nnunetv2: nnU-Net ResEnc-L

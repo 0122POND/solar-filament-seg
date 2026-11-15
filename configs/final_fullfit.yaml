@@ -1,0 +1,60 @@
+# NLv selector x B6 refiner members retrained on all 707 frames ("fullfit") + C0, refiner seeds none / 11 / 12 (public LB 0.41;
+# CSV sub_NLv_FF6C0_t025.csv, md5 31e07084..., 1,210 filaments on 178 frames; tests/test_golden_final.py).
+# This file is NOT the final model. The final model is configs/final_yellow.yaml, which includes this file and changes only
+# the refiner seeds (16 / 17 / 18) and the order of the decode (order bonus 0.10). This file was our selected submission from
+# 2026-11-09 to 2026-11-14 and is kept as a documented alternative.
+#   selector  NLv V-ENS (configs/nlv.yaml: 3 R50 voters, own2 maps, 70 features, one seed), stored test scores mdtest_nl/yhat_v
+#   refiner   B6 = 6 members, equal-weight probability mean: NNRP o / x11 / x12 + S15F o / x11 / x12 (configs/stk_nnrp.yaml,
+#             configs/s15f.yaml recipes: 24 epochs, alpha 1.0, protect 1.5, GONG SSL init, nnU-Net OOF map, NNRP planes,
+#             S15F features), each RETRAINED ON ALL 707 FRAMES (`residual --fold -1`, no held-out rows). At test time each
+#             full-data refiner is applied to the five fold-k inputs (nnU-Net map / NNRP planes / S15F features of fold model k,
+#             flip TTA x4) and the five probabilities are averaged; mean over the 6 members = sum / (5 x 6).
+#   C0        a Swin-L candidate whose refined mask is < 0.6 x its raw area keeps the raw mask
+#   decode    tau 0.25, mask NMS 0.3, no overlaps
+# OOF of the fold version (same selector and recipe, B6 fold refiners; the full-data refiners have no OOF):
+#   nested 0.4753 / rec tau 0.25 0.4758 / simulated 0.4142 (oof-eval). Public LB: fold version 0.41, this config 0.41.
+# Only the refiner is retrained on all frames: refitting the candidate models on all frames as well ("fullcand") gave LB 0.40.
+# Alternatives kept as documented configs: configs/stk.yaml (STK-avg5 + C0 + S15F, LB 0.40), configs/nlv.yaml (NLv + NNR, LB 0.40).
+#
+# Stages (GPU except final-cpu; inputs as for configs/stk.yaml: refiner crops, nlv.stage_nnr_crops, nnrp-planes, S15F crops):
+#   for m in FFNNRPo FFNNRPx11 FFNNRPx12 FFS15Fo FFS15Fx11 FFS15Fx12:
+#     python -m filament_seg --config configs/final_fullfit.yaml residual --fold -1 --member $m   -> out/refiner_$m_f-1.pt
+#   python -m filament_seg --config configs/final_fullfit.yaml s15f-test                         -> out/s15f_test_feat_f{k}.npy
+#   python -m filament_seg --config configs/final_fullfit.yaml refine-test --weights <weights> --out refined.pkl
+#   python -m filament_seg --config configs/final_fullfit.yaml final-cpu --out final.csv      (V-ENS fit + C0 + decode, CPU)
+#   python -m filament_seg --config configs/final_fullfit.yaml final-cpu --yhat-cached --out final.csv   (decode + C0, 30 s)
+include: [stk.yaml]
+
+maskdino:
+  voters: {arch: r50, size: 1024, epochs: 40, seeds: [0, 1, 2]}   # NLv votes; Swin-L 1536 (voter_sl) only feeds the refiner planes / features
+
+votes:
+  voters: [s0, s1, s2]          # NLv: 8 vote features (votes.VFEATS), no Swin-L 1536 voter
+
+verifier:
+  seeds: [0]                    # NLv: one V-ENS (the submitted NLv members, outputs/nlv_weights)
+
+decode:
+  tau: 0.25
+
+refiner:                        # training settings as configs/stk.yaml (S15F feature crops; NNRP members train without them)
+  c0_ratio: 0.6
+  members:                      # order of the development ensemble (divens/ens_test_dv.py); checkpoints relative to refine-test --weights
+    - {tag: FFNNRPo,   full: true, checkpoints: fullfit/refiner_FFNNRPo_f-1.pt}
+    - {tag: FFNNRPx11, full: true, seed: 11, checkpoints: fullfit/refiner_FFNNRPx11_f-1.pt}
+    - {tag: FFNNRPx12, full: true, seed: 12, checkpoints: fullfit/refiner_FFNNRPx12_f-1.pt}
+    - {tag: FFS15Fo,   full: true, checkpoints: fullfit/refiner_FFS15Fo_f-1.pt, test_feats: "s15f_test_feat_f{k}.npy", test_boxes: s15f_test_boxes.npy}
+    - {tag: FFS15Fx11, full: true, seed: 11, checkpoints: fullfit/refiner_FFS15Fx11_f-1.pt, test_feats: "s15f_test_feat_f{k}.npy", test_boxes: s15f_test_boxes.npy}
+    - {tag: FFS15Fx12, full: true, seed: 12, checkpoints: fullfit/refiner_FFS15Fx12_f-1.pt, test_feats: "s15f_test_feat_f{k}.npy", test_boxes: s15f_test_boxes.npy}
+
+nlv:                            # cached model outputs (SOLAR_ROOT); NLv selector inputs as configs/nlv.yaml
+  train_votes: ${SOLAR_ROOT}/outputs/vote_mdNL.parquet
+  oof_voters: {sl: null}
+  test_voters: {sl: null}
+  evo: null                     # no g7_m2 columns
+  yhat: ${SOLAR_ROOT}/outputs/mdtest_nl/yhat_v.parquet                                 # NLv test scores (reference / --yhat-cached)
+  oof_yhat: ${SOLAR_ROOT}/outputs/fuseD/mdNLv/vens/yhat_ens.parquet                     # NLv OOF scores (oof-eval)
+  vens_weights: ${SOLAR_ROOT}/outputs/nlv_weights                                       # NLv V-ENS members (Hugging Face nlv/)
+  refiner_rles: ${SOLAR_ROOT}/outputs/mdtest_fullfit/refiner_FF6_test_rles.pkl          # full-data B6 masks of the test candidates (before C0; refine-test)
+  oof_refiner_rles: ${SOLAR_ROOT}/outputs/refevo/divens/rles/refiner_B6_f{k}_rles.pkl   # OOF masks of the fold version B6 (before C0)
+  submitted_csv: ${SOLAR_ROOT}/outputs/mdtest_fullfit/sub_NLv_FF6C0_t025.csv

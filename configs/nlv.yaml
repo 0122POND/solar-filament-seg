@@ -1,0 +1,95 @@
+# Minimal variant NLv + NNR; its selector is the selector of the final model configs/final_yellow.yaml (every model trained by us on the competition train set). OOF rec PQ 0.4701, simulated test 0.4116, public LB 0.40.
+#   candidates = nnU-Net ResEnc-L 2D map components (0.3 / 0.4, area >= 50) U Mask DINO Swin-L instances
+#   votes      = Mask DINO R50 seeds 0 / 1 / 2 (8 features), map features = own2 maps (14 features)
+#   verifier   = V-ENS (HistGBR / CatBoost / XGBoost / ExtraTrees rank average), 70 features, fitted on all 707 frames
+#   refiner    = NNR (residual U-Net r34, SSL init, 7th plane = nnU-Net map), decode tau 0.28, mask NMS 0.3, no overlaps
+# CPU stages from the cached model outputs: python -m filament_seg --config configs/nlv.yaml final-cpu --out nlv.csv
+# (the submitted CSV is sub_mdNLv_NN_t028.csv, md5 9eb43f91...; tests/test_golden_nlv.py)
+paths:
+  data: ${SOLAR_DATA}          # .../MAGFiLO_1.0_Kaggle_2026 (train/, test/)
+  out: ${SOLAR_OUT}            # artifacts; default ./out
+
+nnunet:                        # candidate source 1 (filament_seg/nnunet_cands.py)
+  dataset: Dataset101_Solar    # nnU-Net raw dataset name (2048 px, one channel, label 1 = filament)
+  plans: nnUNetResEncUNetLPlans
+  configuration: 2d
+  trainer: nnUNetTrainer_250epochs   # fold 0 of the submitted run: nnUNetTrainer (1000 epochs)
+  checkpoint: checkpoint_final.pth
+  bins: [0.3, 0.4]             # probability thresholds of the connected components
+  min_area: 50
+
+maskdino:                      # candidate source 2 (Swin-L) and the three R50 voters (filament_seg/maskdino_cands.py)
+  candidates: {arch: swinl, size: 1024, epochs: 40}
+  voters: {arch: r50, size: 1024, epochs: 40, seeds: [0, 1, 2]}
+
+candidates:
+  conf_min: 0.05               # Mask DINO instances kept as candidates
+  bins: [0.3, 0.4]
+  min_area: 50
+  cluster_iou: 0.7
+
+refiner:                       # NNR = the base pipeline's residual refiner with the nnU-Net map as 7th plane
+  tag: NNR
+  plane7: nnunet               # nnU-Net probability map
+  extra_crops: [refiner_nnr_crops.npy]   # 7th training plane (filament_seg/nlv.stage_nnr_crops)
+  infer_bs: 64
+  kind: residual
+  crop_size: 256
+  crop_scale: 2.0
+  crop_min_side: 128
+  alpha: 1.0
+  protect: 1.5
+  ssl_init: true
+  epochs: 24
+  bs: 32
+  lr: 3.0e-4
+
+ssl:
+  encoder: ssl_mimC_r34_enc.pt  # GONG SimMIM encoder of the refiner (`ssl`)
+
+verifier:
+  ens:                         # V-ENS members (filament_seg/nlv.py); the HistGBR member uses nlv.GB
+    cat: {depth: 6, iterations: 800, learning_rate: 0.05, loss_function: RMSE, random_seed: 0, thread_count: 2, verbose: 0}
+    xgb: {tree_method: hist, max_depth: 6, n_estimators: 800, learning_rate: 0.04, subsample: 0.8, colsample_bytree: 0.8, random_state: 0, n_jobs: 2}
+    et: {n_estimators: 500, min_samples_leaf: 20, max_features: 0.5, random_state: 0, n_jobs: 2}
+
+decode:
+  tau: 0.28
+  nms_iou: 0.3
+  keep_frac: 0.5
+  low_add_lo: 1.0              # no low-score add (lo = 1)
+  low_add_min_area: 0
+
+efficiency:
+  fast_map_features: true   # map features on the candidate box (identical values, tests/test_efficiency.py)
+
+nlv:                           # cached model outputs of the submitted run (SOLAR_ROOT = development folder; nothing is copied into the repo)
+  train_cands: ${SOLAR_ROOT}/outputs/fuseD/verifier_cands_mdNL.parquet          # OOF candidates (nnU-Net components U Swin-L), FEATS_ALL + y
+  train_rles: ${SOLAR_ROOT}/outputs/fuseD/verifier_cands_rles_mdNL.pkl
+  train_mapfeats: ${SOLAR_ROOT}/outputs/fuseD/mdNL/md/own2_feats.pkl            # own2 OOF map features (key F)
+  train_maps: ${SOLAR_ROOT}/outputs/cnxt_maps/own2                               # own2 OOF maps (--recompute-maps)
+  train_votes: ${SOLAR_ROOT}/outputs/vote_mdNL.parquet
+  oof_voters:                                                                     # --recompute-votes
+    s0: ${SOLAR_ROOT}/outputs/maskdino/maskdino_f{k}_val.pkl
+    s1: ${SOLAR_ROOT}/outputs/maskdino/maskdino_s1_f{k}_val.pkl
+    s2: ${SOLAR_ROOT}/outputs/maskdino/maskdino_s2_f{k}_val.pkl
+  test_names: ${SOLAR_ROOT}/outputs/mdtest_nl/test_names.npy
+  test_cands: ${SOLAR_ROOT}/outputs/mdtest_nl/verifier_test_cands_v1.parquet
+  test_rles: ${SOLAR_ROOT}/outputs/mdtest_nl/verifier_test_rles_v1.pkl
+  test_voters:                                                                    # test frame i uses fold model i % 5
+    s0: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_f{k}.pkl
+    s1: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_s1_f{k}.pkl
+    s2: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_s2_f{k}.pkl
+  test_maps: ${SOLAR_ROOT}/outputs/pm/own2/f{k}                                   # own2 test maps of fold model k
+  train_v1_prob: ${SOLAR_ROOT}/outputs/seg_v1oof_valprob.npy                   # U-Net++ OOF probabilities (1024)
+  train_v1_names: ${SOLAR_ROOT}/outputs/seg_v1oof.json
+  train_nnmaps: ${SOLAR_ROOT}/outputs/nnunet_maps                               # nnU-Net OOF maps <stem>_rep.png (candidates + NNR training plane)
+  test_nnmaps: ${SOLAR_ROOT}/outputs/nnunet_test_maps/f{k}                      # nnU-Net test maps of fold model k
+  train_swinl: ${SOLAR_ROOT}/outputs/maskdino/maskdino_swinl_f{k}_val.pkl        # Swin-L OOF instances (candidate source 2)
+  refiner_rles: ${SOLAR_ROOT}/outputs/mdtest_nl/refiner_mdNL_NN_test_rles.pkl    # NNR masks of the test candidates
+  yhat: ${SOLAR_ROOT}/outputs/mdtest_nl/yhat_v.parquet                           # submitted verifier scores (reference / --yhat-cached)
+  oof_yhat: ${SOLAR_ROOT}/outputs/fuseD/mdNLv/vens/yhat_ens.parquet           # OOF V-ENS scores (oof-eval)
+  oof_refiner_rles: ${SOLAR_ROOT}/outputs/maskdino/ref_mdNLNN/refiner_OWN2X_mdNLNN_f{k}_rles.pkl   # OOF NNR masks
+  gt_rles: ${SOLAR_ROOT}/outputs/s2/verifier_gt_rles.pkl                     # annotator records of the training frames
+  vens_weights: ${SOLAR_ROOT}/outputs/nlv_weights                            # fitted V-ENS members (final-cpu --save-weights)
+  submitted_csv: ${SOLAR_ROOT}/outputs/mdtest_nl/sub_mdNLv_NN_t028.csv

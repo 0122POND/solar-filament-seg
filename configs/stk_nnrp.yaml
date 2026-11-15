@@ -1,0 +1,14 @@
+# Previous submission STK-avg5 + C0 + NNRP (2026-11-07, public LB 0.40; OOF nested 0.4741 / rec tau 0.28 0.4748 / simulated
+# 0.4155): configs/stk.yaml with the NNRP refiner instead of S15F (no feature crops). CSV md5 25ac8b05 (tests/test_golden_stk.py).
+include: [stk.yaml]
+refiner:
+  tag: NNRP
+  feat_crops: null
+  oof_prob_u8: null
+  members:
+    - tag: NNRP
+      checkpoints: extra/refiner_NNRP_f{k}.pt
+nlv:
+  refiner_rles: ${SOLAR_ROOT}/outputs/mdtest_stk_nnrp/refiner_mdNL_NNRP_test_rles.pkl
+  oof_refiner_rles: ${SOLAR_ROOT}/outputs/more/refplanes/run/refiner_NNRP_f{k}_rles.pkl
+  submitted_csv: ${SOLAR_ROOT}/outputs/mdtest_stk_nnrp/sub_STKavg5_C0_NNRP_t028.csv

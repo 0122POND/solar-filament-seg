@@ -1,0 +1,145 @@
+# Documented alternative STK-avg5 + C0 + S15F (selected submission from 2026-11-08 until configs/final_fullfit.yaml,
+# LB 0.41, replaced it on 2026-11-09; final_fullfit.yaml and, through it, the final model configs/final_yellow.yaml include
+# this file for the refiner planes and features; every model
+# trained by us on the competition train set). Public LB 0.40. OOF (707 frames): nested 0.4759 / rec tau 0.28 0.4767 / simulated 0.4171
+#   (previous submission STK-avg5 + C0 + NNRP, configs/stk_nnrp.yaml: 0.4741 / 0.4748 / 0.4155, LB 0.40).
+#   = NLv (configs/nlv.yaml) with
+#   votes      + Mask DINO Swin-L 1536 as a 4th voter (not a candidate source): 11 vote features (votes.VFEATS_STK)
+#   g7_m2      + 7 agreement / shape columns from R50 seeds 0-3, Swin-L 1536, Cascade Mask R-CNN R50-FPN, RF-DETR-Seg L,
+#                Swin-L 1024 duplicate queries and the nnU-Net map (filament_seg/evofeats.py); column set selected on the OOF
+#   verifier   V-ENS on 80 features, fitted with seeds 0-4, test scores averaged
+#   refiner    S15F = NNRP (NNR + 2 planes with the best-matching Swin-L 1536 / RF-DETR-Seg mask, filament_seg/refplanes.py)
+#              + Swin-L 1536 mask_features in a common 16-channel space at stride 4 (configs/s15f.yaml, filament_seg/s15f.py)
+#   C0         a Swin-L candidate whose refined mask is < 0.6 x its raw area keeps the raw mask (nlv.apply_c0)
+#   decode     tau 0.28, mask NMS 0.3, no overlaps (as NLv)
+# CPU stages from the cached model outputs: python -m filament_seg --config configs/stk.yaml final-cpu --out stk.csv
+# (the submitted CSV is sub_STKavg5_C0_S15F_t028.csv, md5 a2089e62...; tests/test_golden_stk.py)
+include: [s15f.yaml]
+paths:
+  data: ${SOLAR_DATA}          # .../MAGFiLO_1.0_Kaggle_2026 (train/, test/)
+  out: ${SOLAR_OUT}            # artifacts; default ./out
+
+nnunet:                        # candidate source 1 (filament_seg/nnunet_cands.py)
+  dataset: Dataset101_Solar    # nnU-Net raw dataset name (2048 px, one channel, label 1 = filament)
+  plans: nnUNetResEncUNetLPlans
+  configuration: 2d
+  trainer: nnUNetTrainer_250epochs   # fold 0 of the submitted run: nnUNetTrainer (1000 epochs)
+  checkpoint: checkpoint_final.pth
+  bins: [0.3, 0.4]             # probability thresholds of the connected components
+  min_area: 50
+
+maskdino:                      # candidate source 2 (Swin-L) and the voters (filament_seg/maskdino_cands.py)
+  candidates: {arch: swinl, size: 1024, epochs: 40}
+  voters: {arch: r50, size: 1024, epochs: 40, seeds: [0, 1, 2, 3]}   # seed 3 is used by g7_m2 only
+  voter_sl: {arch: swinl, size: 1536, epochs: 40}                     # 4th voter and g7_m2 / NNRP family
+
+votes:
+  voters: [s0, s1, s2, sl]
+
+detectors:                     # g7_m2 / NNRP families trained outside filament_seg (README, "STK detectors")
+  cascade: {model: Cascade Mask R-CNN R50-FPN 3x (detectron2 model zoo COCO init)}
+  rfdetrseg: {model: RF-DETR-Seg Large (rfdetr 1.11.1), resolution: 1008}
+
+candidates:
+  conf_min: 0.05               # Mask DINO instances kept as candidates
+  bins: [0.3, 0.4]
+  min_area: 50
+  cluster_iou: 0.7
+
+refiner:                       # S15F (configs/s15f.yaml: tag, feature crops, members) = NNRP planes + features, then C0
+  plane7: nnunet               # nnU-Net probability map
+  best_match_planes: [swinl1536, rfdetrseg]
+  extra_crops: [refiner_nnr_crops.npy, refiner_nnrp_planes.npy]   # planes 5 / 6-7 (nlv.stage_nnr_crops, refplanes.stage_nnrp_planes)
+  c0_ratio: 0.6
+  infer_bs: 64
+  kind: residual
+  crop_size: 256
+  crop_scale: 2.0
+  crop_min_side: 128
+  alpha: 1.0
+  protect: 1.5
+  ssl_init: true
+  epochs: 24
+  bs: 32
+  lr: 3.0e-4
+
+ssl:
+  encoder: ssl_mimC_r34_enc.pt  # GONG SimMIM encoder of the refiner (`ssl`)
+
+verifier:
+  seeds: [0, 1, 2, 3, 4]       # one V-ENS per seed, test scores averaged (seed 0 = the NLv members)
+  ens:                         # V-ENS members (filament_seg/nlv.py); the HistGBR member uses nlv.GB
+    cat: {depth: 6, iterations: 800, learning_rate: 0.05, loss_function: RMSE, random_seed: 0, thread_count: 2, verbose: 0}
+    xgb: {tree_method: hist, max_depth: 6, n_estimators: 800, learning_rate: 0.04, subsample: 0.8, colsample_bytree: 0.8, random_state: 0, n_jobs: 2}
+    et: {n_estimators: 500, min_samples_leaf: 20, max_features: 0.5, random_state: 0, n_jobs: 2}
+
+decode:
+  tau: 0.28
+  nms_iou: 0.3
+  keep_frac: 0.5
+  low_add_lo: 1.0              # no low-score add (lo = 1)
+  low_add_min_area: 0
+
+efficiency:
+  fast_map_features: true   # map features on the candidate box (identical values, tests/test_efficiency.py)
+
+nlv:                           # cached model outputs of the submitted runs (SOLAR_ROOT = development folder; nothing is copied into the repo)
+  train_cands: ${SOLAR_ROOT}/outputs/fuseD/verifier_cands_mdNL.parquet          # OOF candidates (nnU-Net components U Swin-L), FEATS_ALL + y
+  train_rles: ${SOLAR_ROOT}/outputs/fuseD/verifier_cands_rles_mdNL.pkl
+  train_mapfeats: ${SOLAR_ROOT}/outputs/fuseD/mdNL/md/own2_feats.pkl            # own2 OOF map features (key F)
+  train_maps: ${SOLAR_ROOT}/outputs/cnxt_maps/own2                               # own2 OOF maps (--recompute-maps)
+  train_votes: ${SOLAR_ROOT}/outputs/vote_mdNL_sl.parquet
+  oof_voters:                                                                     # --recompute-votes
+    s0: ${SOLAR_ROOT}/outputs/maskdino/maskdino_f{k}_val.pkl
+    s1: ${SOLAR_ROOT}/outputs/maskdino/maskdino_s1_f{k}_val.pkl
+    s2: ${SOLAR_ROOT}/outputs/maskdino/maskdino_s2_f{k}_val.pkl
+    sl: ${SOLAR_ROOT}/outputs/maskdino/maskdino_swinl1536_f{k}_val.pkl
+  test_names: ${SOLAR_ROOT}/outputs/mdtest_nl/test_names.npy
+  test_cands: ${SOLAR_ROOT}/outputs/mdtest_nl/verifier_test_cands_v1.parquet
+  test_rles: ${SOLAR_ROOT}/outputs/mdtest_nl/verifier_test_rles_v1.pkl
+  test_voters:                                                                    # test frame i uses fold model i % 5
+    s0: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_f{k}.pkl
+    s1: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_s1_f{k}.pkl
+    s2: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_s2_f{k}.pkl
+    sl: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_swinl1536_f{k}.pkl
+  test_maps: ${SOLAR_ROOT}/outputs/pm/own2/f{k}                                   # own2 test maps of fold model k
+  train_v1_prob: ${SOLAR_ROOT}/outputs/seg_v1oof_valprob.npy                   # U-Net++ OOF probabilities (1024)
+  train_v1_names: ${SOLAR_ROOT}/outputs/seg_v1oof.json
+  train_nnmaps: ${SOLAR_ROOT}/outputs/nnunet_maps                               # nnU-Net OOF maps <stem>_rep.png (candidates + NNR training plane)
+  test_nnmaps: ${SOLAR_ROOT}/outputs/nnunet_test_maps/f{k}                      # nnU-Net test maps of fold model k
+  train_swinl: ${SOLAR_ROOT}/outputs/maskdino/maskdino_swinl_f{k}_val.pkl        # Swin-L OOF instances (candidate source 2)
+  refiner_rles: ${SOLAR_ROOT}/outputs/mdtest_stk_s15f/refiner_mdNL_S15F_test_rles.pkl   # S15F masks of the test candidates (before C0; refine-test)
+  yhat: ${SOLAR_ROOT}/outputs/mdtest_stk/yhat_stk_avg5.parquet                   # submitted verifier scores (reference / --yhat-cached)
+  oof_yhat: ${SOLAR_ROOT}/outputs/cpusweep/srctau/stkavg5_yhat_ens.parquet       # OOF STK-avg5 scores (oof-eval)
+  oof_refiner_rles: ${SOLAR_ROOT}/outputs/refevo/s15feat/refiner_S15Fs0_f{k}_rles.pkl    # OOF S15F masks (before C0; residual --fold k)
+  gt_rles: ${SOLAR_ROOT}/outputs/s2/verifier_gt_rles.pkl                     # annotator records of the training frames
+  vens_weights: ${SOLAR_ROOT}/outputs/stk_weights                            # fitted V-ENS members, seed<s>/ (final-cpu --save-weights)
+  submitted_csv: ${SOLAR_ROOT}/outputs/mdtest_stk_s15f/sub_STKavg5_C0_S15F_t028.csv
+  test_v1_prob: ${SOLAR_ROOT}/outputs/mdtest_nl/test_v1_prob.npy              # U-Net++ test probabilities (1024, fp32; refine-test)
+  evo:                                                                           # g7_m2 (filament_seg/evofeats.py)
+    train: ${SOLAR_ROOT}/outputs/evo/g7_m2.parquet                               # cached OOF columns (--recompute-evo rebuilds them)
+    test: ${SOLAR_ROOT}/outputs/mdtest_evoc0/g7_m2_test.parquet                  # cached test columns
+    test_swinl_queries: ${SOLAR_ROOT}/outputs/mdtest_evoc0/maskdino_test_swinl_f{k}.pkl   # Swin-L 1024 fold-k outputs on all 180 test frames (score >= 0.05)
+    oof_preds:                                                                   # fold-validation outputs of the 7 models
+      r50_s0: ${SOLAR_ROOT}/outputs/maskdino/maskdino_f{k}_val.pkl
+      r50_s1: ${SOLAR_ROOT}/outputs/maskdino/maskdino_s1_f{k}_val.pkl
+      r50_s2: ${SOLAR_ROOT}/outputs/maskdino/maskdino_s2_f{k}_val.pkl
+      r50_s3: ${SOLAR_ROOT}/outputs/maskdino/maskdino_s3_f{k}_val.pkl
+      swinl1536: ${SOLAR_ROOT}/outputs/maskdino/maskdino_swinl1536_f{k}_val.pkl
+      cascade: ${SOLAR_ROOT}/outputs/maskdino/cmrcnn_f{k}_val.pkl
+      rfdetrseg: ${SOLAR_ROOT}/outputs/maskdino/rfdetrseg_f{k}_val.pkl
+    test_preds:                                                                  # outputs of fold model k on all 180 test frames
+      r50_s0: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_f{k}.pkl
+      r50_s1: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_s1_f{k}.pkl
+      r50_s2: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_s2_f{k}.pkl
+      r50_s3: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_s3_f{k}.pkl
+      swinl1536: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_swinl1536_f{k}.pkl
+      cascade: ${SOLAR_ROOT}/outputs/maskdino/cmrcnn_test_f{k}.pkl
+      rfdetrseg: ${SOLAR_ROOT}/outputs/maskdino/rfdetrseg_test_f{k}.pkl
+  refplanes:                                                                     # NNRP planes (filament_seg/refplanes.py)
+    oof:
+      swinl1536: ${SOLAR_ROOT}/outputs/maskdino/maskdino_swinl1536_f{k}_val.pkl
+      rfdetrseg: ${SOLAR_ROOT}/outputs/maskdino/rfdetrseg_f{k}_val.pkl
+    test:
+      swinl1536: ${SOLAR_ROOT}/outputs/maskdino/maskdino_test_swinl1536_f{k}.pkl
+      rfdetrseg: ${SOLAR_ROOT}/outputs/maskdino/rfdetrseg_test_f{k}.pkl

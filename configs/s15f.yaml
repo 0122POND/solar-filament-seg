@@ -1,0 +1,32 @@
+# S15F refiner (included by configs/stk.yaml, the STK-avg5 alternative; the final model configs/final_yellow.yaml and configs/final_fullfit.yaml use its
+# features with three full-data S15F members): NNRP + Swin-L 1536 Mask DINO mask_features in a common
+# 16-channel space, cropped 64 x 64 with the refiner windows and added to the stride-4 encoder stage through a zero-initialised
+# 1x1 conv (filament_seg/s15f.py, filament_seg/refiner.py). OOF (707 frames, STK-avg5 scores + C0): nested 0.4759 /
+# rec tau 0.28 0.4767 / simulated 0.4171 (NNRP 0.4741 / 0.4748 / 0.4155). Test CSV md5 a2089e62 (tests/test_golden_stk.py).
+# Stages (GPU except s15f-fit):
+#   for k in 0..4: python -m filament_seg --config configs/stk.yaml s15f-ref --fold $k   -> out/s15f_ref_f{k}.npy
+#   python -m filament_seg --config configs/stk.yaml s15f-fit                             -> out/s15f_align.npz (no GT used)
+#   python -m filament_seg --config configs/stk.yaml s15f-train-crops                     -> out/s15f_feat_crops.npy (OOF)
+#   for k in 0..4: python -m filament_seg --config configs/stk.yaml residual --fold $k    -> out/refiner_S15F_f{k}.pt
+#   python -m filament_seg --config configs/stk.yaml s15f-test                            -> out/s15f_test_feat_f{k}.npy
+#   python -m filament_seg --config configs/stk.yaml refine-test --weights <weights> --out refined.pkl
+s15f:
+  maskdino_root: ${MASKDINO_ROOT}                                   # MaskDINO checkout (filament_seg/maskdino_cands.py setup)
+  swinl1536_weights: ${SOLAR_WEIGHTS}/final/maskdino_swinl1536_f{k}.pt   # Swin-L 1536 fold models (Hugging Face layout)
+  size: 1536
+  channels: 16                                                      # common PCA channels (s15f.NPC)
+  ref_per_fold: 25                                                  # reference frames per fold validation list (s15f.NREF_PER_FOLD)
+  ref_pixels: 3000                                                  # sampled pixels per reference frame (s15f.NPIX)
+
+refiner:
+  tag: S15F
+  feat_crops: s15f_feat_crops.npy   # training feature crops (out/), row order of refiner_meta.parquet
+  feat_lazy: false                  # true = memory-map the feature crops instead of loading them (same values, less RAM)
+  oof_prob_u8: true                 # OOF masks pasted back from uint8 probabilities, as in the development run
+  members:                          # test-time refiner(s); probabilities averaged with equal weight over the members
+    - tag: S15F
+      checkpoints: final/refiner_S15F_f{k}.pt        # relative to refine-test --weights
+      test_feats: s15f_test_feat_f{k}.npy            # relative to out/ (s15f-test)
+      test_boxes: s15f_test_boxes.npy
+  # Ensemble of several refiners = more members, equal weights (configs/final_fullfit.yaml: NNRP x 3 seeds + S15F x 3 seeds,
+  # trained on all frames, `full: true`).

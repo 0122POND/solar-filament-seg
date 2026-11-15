@@ -1,0 +1,75 @@
+# Champion configuration "V2bSC yorig" (public LB 0.39, 707-image 5-fold OOF PQ 0.4473, nested 0.4462).
+# SSL on the cleaned GONG frames; the verifier scores the candidates on their original (pre-refinement) features.
+# Every value below is the one used for the submitted run; change them only for new experiments.
+paths:
+  data: ${SOLAR_DATA}          # .../MAGFiLO_1.0_Kaggle_2026 (train/, test/)
+  out: ${SOLAR_OUT}            # artifacts; default ./out
+
+semantic:                      # full-disk U-Net++ on the physical 3-channel input
+  encoder: resnet34
+  res: 1024
+  epochs: 30
+  bs: 4
+  lr: 3.0e-4
+  eval_every: 2
+
+yolo:                          # YOLO11s-seg candidates
+  model: yolo11s-seg.pt
+  imgsz: 1536
+  epochs: 40
+  batch: 4
+  conf: 0.01                   # keep everything at inference; the union filters at candidates.yolo_conf_min
+  iou: 0.6
+  max_det: 200
+
+candidates:
+  bins: [0.3, 0.4]             # probability thresholds of the connected components
+  min_area: 50
+  yolo_conf_min: 0.05
+  cluster_iou: 0.7
+
+refiner:
+  tag: V2bSC
+  kind: residual               # residual refiner (default); stage1 = plain refiner (configs/a2_refined.yaml)
+  crop_size: 256
+  crop_scale: 2.0
+  crop_min_side: 128
+  alpha: 1.0                   # residual strength: logit = alpha * (2 seed - 1) + delta
+  protect: 1.5                 # hinge weight on seeds that already hit (IoU > 0.5)
+  ssl_init: true
+  epochs: 24
+  bs: 32
+  lr: 3.0e-4
+  stage1:                      # "A2": defines the residual model's sample weights only
+    tag: A2
+    epochs: 24
+    bs: 32
+    lr: 3.0e-4
+    max_minutes: 60
+
+ssl:
+  encoder: ssl_mimC_r34_enc.pt  # output of `ssl`, input of `residual`
+  steps: 16000
+  bs: 48
+  lr: 3.0e-4
+
+verifier:
+  features: original           # original = candidate features before refinement (champion); refined = recomputed on refined masks
+  gbdt:                        # sklearn HistGradientBoostingRegressor
+    max_iter: 600
+    learning_rate: 0.04
+    max_leaf_nodes: 31
+    min_samples_leaf: 30
+    l2_regularization: 1.0
+    random_state: 0
+
+decode:
+  tau: 0.25
+  nms_iou: 0.3
+  keep_frac: 0.5
+
+weights:                       # file names inside the --weights folder (see weights/README.md)
+  semantic: seg_v1.pt
+  yolo: yolo11s_seg_holdout.pt
+  refiner: [refiner_V2bSC_f0.pt, refiner_V2bSC_f1.pt, refiner_V2bSC_f2.pt, refiner_V2bSC_f3.pt, refiner_V2bSC_f4.pt]
+  verifier: verifier_gbdt_full.joblib

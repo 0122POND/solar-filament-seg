@@ -1,0 +1,6 @@
+{
+  "title": "Solar filament NLv weights",
+  "id": "deepernet/solar-filament-nlv-weights",
+  "licenses": [{"name": "other"}],
+  "description": "Inference weights of the minimal variant NLv + NNR (configs/nlv.yaml; not the final model, which is configs/final_yellow.yaml and takes its weights from the Hugging Face Hub) (filament-segmentation-2026, IEEE BigData Cup 2026) for https://github.com/0122POND/solar-filament-seg. nnU-Net ResEnc-L 2D (5 folds, network weights only), Mask DINO Swin-L and R50 (seeds 0-2) x 5 folds, own2 U-Nets (r34, EfficientNetV2-S) x 5 folds, NNR refiner x 5 folds, U-Net++ r34 (seg_v1.pt). Trained by us on the competition train set only; no external models. Licence: MIT for our weights; Mask DINO / Swin backbones were initialised from public COCO / ImageNet weights (Apache-2.0). Checksums: MD5SUMS.txt; manifest: weights/MANIFEST_nlv.tsv in the repository."
+}
