@@ -25,7 +25,7 @@ def test_defaults_are_off_and_every_config_keeps_the_plain_decode():
     assert nlv.DECODE_KNOBS == dict(order_bonus=0.0, iom_max=None)
     for name in ("nlv", "stk", "stk_nnrp", "final_fullfit"):
         assert nlv.decode_knobs(config.load(config.REPO / "configs" / f"{name}.yaml")) == nlv.DECODE_KNOBS, name
-    assert nlv.decode_knobs(config.load(config.REPO / "configs" / "final_yellow.yaml")) == dict(order_bonus=0.10, iom_max=None)
+    assert nlv.decode_knobs(config.load(config.REPO / "configs" / "final_yellow.yaml")) == dict(order_bonus=0.20, iom_max=None)
 
 
 def test_order_bonus_changes_the_order_only():

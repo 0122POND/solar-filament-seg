@@ -1,18 +1,25 @@
-# FINAL MODEL: NLv x full-data B6 (refiner seeds 16 / 17 / 18) + C0 + order bonus 0.10, the submission Kaggle shows as our best public score
-# (public LB 0.41; CSV outputs/sub_NLv_FF6CC0_t025_ORDp10.csv, md5 540c8863..., 1,209 filaments on 178 frames; tests/test_golden_yellow.py).
-# = configs/final_fullfit.yaml with two changes and nothing else:
+# FINAL MODEL: NLv x full-data B6 (refiner seeds 16 / 17 / 18) + C0 + order bonus 0.20 + mask NMS 0.1, the submission Kaggle shows as our best
+# public score (public LB 0.41; CSV outputs/sub_NLv_FF6CC0_t025_ORDp20_NMS010.csv, md5 86ff5b4a..., 1,207 filaments on 178 frames;
+# tests/test_golden_yellow.py).
+# = configs/final_fullfit.yaml with three changes and nothing else:
 #   refiner   the six full-data members are trained with seeds 16 / 17 / 18 (NNRP x16 / x17 / x18 + S15F x16 / x17 / x18)
-#             instead of no seed / 11 / 12. Same recipe, same data (all 707 frames), same test-time inputs. With the bonus
-#             below set to 0 this is sub_NLv_FF6CC0_t025.csv (md5 678c2482..., 1,210 filaments, 914 masks reset by C0, LB 0.41).
-#   decode    order_bonus 0.10: for the ORDER of the decode only, 0.10 is added to yhat of the Mask DINO Swin-L candidates
+#             instead of no seed / 11 / 12. Same recipe, same data (all 707 frames), same test-time inputs. With the two decode
+#             settings below at the values of configs/final_fullfit.yaml (order_bonus 0, nms_iou 0.3) this is
+#             sub_NLv_FF6CC0_t025.csv (md5 678c2482..., 1,210 filaments, 914 masks reset by C0, LB 0.41).
+#   decode    order_bonus 0.20: for the ORDER of the decode only, 0.20 is added to yhat of the Mask DINO Swin-L candidates
 #             (source 'yolo'). The acceptance test yhat > tau uses the unchanged yhat, so the same candidates enter the decode;
 #             the bonus only changes which of two overlapping candidates is placed first (164 of 178 test frames change).
-#             With 0.02 this is sub_NLv_FF6CC0_t025_ORDp02.csv (md5 257bb97a..., 1,209 filaments, LB 0.41), our best public
-#             score on Nov 14; 0.10 was submitted on Nov 15 and replaced it (146 of 178 frames differ between the two).
-# Both changes are inside the noise of our validation: retraining the fold refiners with other seeds moves the nested OOF
+#             With 0.02 (and nms_iou 0.3) this is sub_NLv_FF6CC0_t025_ORDp02.csv (md5 257bb97a..., 1,209 filaments, LB 0.41),
+#             our best public score on Nov 14; 0.10 was submitted on Nov 15 and replaced it (146 of 178 frames differ between
+#             the two): outputs/sub_NLv_FF6CC0_t025_ORDp10.csv (md5 540c8863..., 1,209 filaments, LB 0.41).
+#   decode    nms_iou 0.10: a candidate whose IoU with an already placed mask is above 0.1 is dropped (0.3 in
+#             configs/final_fullfit.yaml). order_bonus 0.20 and then nms_iou 0.10 were submitted on Nov 16, and each replaced
+#             the best public score before it. The final CSV differs from the one of Nov 15 in 7 of the 178 frames.
+# All three changes are inside the noise of our validation: retraining the fold refiners with other seeds moves the nested OOF
 # PQ by SD 0.0002 (NNRP) to 0.0005 (S15F), and on the OOF of the fold version (B6 fold refiners, seeds none / 11 / 12;
-# seeds 16-18 have no fold version) the bonus moves rec PQ from 0.4758 to 0.4759 (+0.0001, 3 of 5 folds up; 0.02: +0.00003).
-# The two were chosen by the order on the public leaderboard among variants our validation cannot separate.
+# seeds 16-18 have no fold version) the two decode settings move rec PQ from 0.4758 to 0.4761 (+0.0003, 3 of 5
+# folds up; order_bonus 0.10 alone: +0.0001, 0.02 alone: +0.00003).
+# The three were chosen by the order on the public leaderboard among variants our validation cannot separate.
 # We do not claim that this config is better than configs/final_fullfit.yaml.
 #
 # Stages (as configs/final_fullfit.yaml):
@@ -24,7 +31,8 @@
 include: [final_fullfit.yaml]
 
 decode:
-  order_bonus: 0.10             # nlv.DECODE_KNOBS; 0 = the decode of configs/final_fullfit.yaml
+  order_bonus: 0.20             # nlv.DECODE_KNOBS; 0 = the decode of configs/final_fullfit.yaml
+  nms_iou: 0.10                 # mask NMS; 0.3 in configs/final_fullfit.yaml
 
 refiner:
   members:                      # checkpoints relative to refine-test --weights
@@ -37,6 +45,7 @@ refiner:
 
 nlv:
   refiner_rles: ${SOLAR_ROOT}/outputs/lastpush/FF6C/refiner_FF6C_test_rles.pkl          # test masks of the six members above (before C0; refine-test)
-  submitted_csv: ${SOLAR_REPO}/outputs/sub_NLv_FF6CC0_t025_ORDp10.csv                   # the final submission (in this repository)
-  submitted_csv_bonus_002: ${SOLAR_ROOT}/outputs/antisym/test/sub_NLv_FF6CC0_t025_ORDp02.csv   # the same members with order_bonus 0.02
-  submitted_csv_no_bonus: ${SOLAR_ROOT}/outputs/lastpush/FF6C/sub_NLv_FF6CC0_t025.csv   # the same members with order_bonus 0
+  submitted_csv: ${SOLAR_REPO}/outputs/sub_NLv_FF6CC0_t025_ORDp20_NMS010.csv            # the final submission (in this repository)
+  submitted_csv_prev: ${SOLAR_REPO}/outputs/sub_NLv_FF6CC0_t025_ORDp10.csv              # order_bonus 0.10, nms_iou 0.3: our best public score on Nov 15
+  submitted_csv_bonus_002: ${SOLAR_ROOT}/outputs/antisym/test/sub_NLv_FF6CC0_t025_ORDp02.csv   # the same members with order_bonus 0.02, nms_iou 0.3
+  submitted_csv_no_bonus: ${SOLAR_ROOT}/outputs/lastpush/FF6C/sub_NLv_FF6CC0_t025.csv   # the same members with order_bonus 0, nms_iou 0.3

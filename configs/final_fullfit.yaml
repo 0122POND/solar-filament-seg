@@ -1,7 +1,7 @@
 # NLv selector x B6 refiner members retrained on all 707 frames ("fullfit") + C0, refiner seeds none / 11 / 12 (public LB 0.41;
 # CSV sub_NLv_FF6C0_t025.csv, md5 31e07084..., 1,210 filaments on 178 frames; tests/test_golden_final.py).
 # This file is NOT the final model. The final model is configs/final_yellow.yaml, which includes this file and changes only
-# the refiner seeds (16 / 17 / 18) and the order of the decode (order bonus 0.10). This file was our selected submission from
+# the refiner seeds (16 / 17 / 18) and the decode (order bonus 0.20, mask NMS 0.1). This file was our selected submission from
 # 2026-11-09 to 2026-11-14 and is kept as a documented alternative.
 #   selector  NLv V-ENS (configs/nlv.yaml: 3 R50 voters, own2 maps, 70 features, one seed), stored test scores mdtest_nl/yhat_v
 #   refiner   B6 = 6 members, equal-weight probability mean: NNRP o / x11 / x12 + S15F o / x11 / x12 (configs/stk_nnrp.yaml,

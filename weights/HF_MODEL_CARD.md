@@ -18,12 +18,12 @@ segmentation of solar filaments in GONG H-alpha full-disk frames, 2048 x 2048, g
 inference notebook and the reproduction checks: https://github.com/0122POND/solar-filament-seg (`notebooks/`,
 `configs/final_yellow.yaml`, `weights/MANIFEST_final.tsv`).
 
-**Final model NLv x full-data B6 + C0, decode order bonus 0.10** (public leaderboard 0.41, `configs/final_yellow.yaml`): nnU-Net ResEnc-L and Mask DINO Swin-L candidates, three
+**Final model NLv x full-data B6 + C0, decode order bonus 0.20 and mask NMS 0.1** (public leaderboard 0.41, `configs/final_yellow.yaml`): nnU-Net ResEnc-L and Mask DINO Swin-L candidates, three
 Mask DINO R50 voters, map features of our own U-Nets, a V-ENS verifier (gradient boosting / CatBoost / XGBoost / extra
 trees), and six residual crop refiners (NNRP and S15F, seeds 16 / 17 / 18) retrained on all 707 training frames
 (`fullfit/`); S15F also reads Swin-L 1536 pixel-decoder features. Out-of-fold PQ of the fold version on the 707 training
-frames: rec 0.4759, simulated 0.4144 (nested 0.4753 without the order bonus). Documented alternatives: the same model with
-refiner seeds none / 11 / 12 and no order bonus (`configs/final_fullfit.yaml`, leaderboard 0.41), STK-avg5 + C0 + S15F (`configs/stk.yaml`,
+frames: nested 0.4756, rec 0.4761, simulated 0.4146 (nested 0.4753 without the order bonus and with mask NMS 0.3). Documented alternatives: the same model with
+refiner seeds none / 11 / 12, no order bonus and mask NMS 0.3 (`configs/final_fullfit.yaml`, leaderboard 0.41), STK-avg5 + C0 + S15F (`configs/stk.yaml`,
 OOF nested 0.4759, leaderboard 0.40) and the minimal model NLv + NNR (`configs/nlv.yaml`, `nlv/` files and `seg_v1.pt` only).
 
 ## Files

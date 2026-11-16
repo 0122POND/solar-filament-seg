@@ -29,14 +29,14 @@ Alternative STK-avg5 + C0 + S15F (configs/stk.yaml; README), CPU stages:
   for k in 0 1 2 3 4: python -m filament_seg --config configs/stk.yaml residual --fold $k     (S15F refiner)
   python -m filament_seg --config configs/stk.yaml s15f-test                                      (test feature crops)
   python -m filament_seg --config configs/stk.yaml refine-test --weights W --out refined.pkl      (refiner members on the test)
-FINAL MODEL NLv x full-data B6 refiners + C0 + order bonus (configs/final_yellow.yaml; README):
+FINAL MODEL NLv x full-data B6 refiners + C0 + order bonus + mask NMS 0.1 (configs/final_yellow.yaml; README):
   python -m filament_seg --config configs/final_yellow.yaml residual --fold -1 --member FFNNRPx16       (x 6 members, see the config)
   python -m filament_seg --config configs/final_yellow.yaml detect-test --model swinl1024|r50|swinl1536 --weights W --out D
                                              (Mask DINO fold models on the test frames, GPU; swinl1024 / r50: frame i by fold model i % 5 only)
   python -m filament_seg --config configs/final_yellow.yaml refine-test --weights W --out refined.pkl   (each full refiner x 5 fold inputs)
-  python -m filament_seg --config configs/final_yellow.yaml final-cpu --out final.csv                   (NLv V-ENS + C0 + tau 0.25 + order bonus)
+  python -m filament_seg --config configs/final_yellow.yaml final-cpu --out final.csv                   (NLv V-ENS + C0 + tau 0.25 + order bonus + mask NMS 0.1)
   python -m filament_seg --config configs/final_yellow.yaml final-cpu --yhat-cached --out final.csv     (C0 + decode, under 1 min)
-  Same model with the refiner seeds none / 11 / 12 and no order bonus: configs/final_fullfit.yaml (same stages, members FFNNRPo ...).
+  Same model with the refiner seeds none / 11 / 12, no order bonus and mask NMS 0.3: configs/final_fullfit.yaml (same stages, members FFNNRPo ...).
   Detector wrappers of the g7_m2 / NNRP families: python -m filament_seg.cascade_cands, python -m filament_seg.rfdetr_cands
 """
 import argparse

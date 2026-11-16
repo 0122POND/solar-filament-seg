@@ -1,6 +1,6 @@
 [project]
 name = "filament-seg"
-version = "0.2.0"
+version = "0.2.1"
 description = "Solar filament instance segmentation on GONG H-alpha (Kaggle filament-segmentation-2026)"
 requires-python = ">=3.10"
 

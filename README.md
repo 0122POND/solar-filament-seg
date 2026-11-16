@@ -18,7 +18,7 @@ pre-trained without labels (SimMIM) on 2,780 unlabeled GONG frames. The final mo
 than those of the competition training set.
 
 **Final model.** In this repository "final model" means one thing: `configs/final_yellow.yaml`, the configuration that
-produced our final submission (`outputs/sub_NLv_FF6CC0_t025_ORDp10.csv`, md5 `540c886326cff3320dd341c0dedd2cd1`, 1,209
+produced our final submission (`outputs/sub_NLv_FF6CC0_t025_ORDp20_NMS010.csv`, md5 `86ff5b4a66347474e927eca1ec4e83bd`, 1,207
 filaments on 178 of the 180 test frames, public leaderboard 0.41). Every other config is an earlier or alternative pipeline and is
 named as such ("Names used in this repository").
 
@@ -45,14 +45,14 @@ for every candidate:
   v
 area revert: a Mask DINO candidate whose redrawn mask is below 0.6 x its original area keeps the original mask
   v
-decode: keep y_hat > 0.25, place the candidates in decreasing y_hat (order bonus: + 0.10 for the Mask DINO candidates, in
-        the order only), drop a candidate whose IoU with a placed one is above 0.3 (mask NMS), remove pixels that a
+decode: keep y_hat > 0.25, place the candidates in decreasing y_hat (order bonus: + 0.20 for the Mask DINO candidates, in
+        the order only), drop a candidate whose IoU with a placed one is above 0.1 (mask NMS), remove pixels that a
         placed mask already holds
   v
 submission.csv  (filament_id, segmentation_rle)
 ```
 
-The 180 test frames give 10,189 candidates, of which 1,209 are in the submission.
+The 180 test frames give 10,189 candidates, of which 1,207 are in the submission.
 
 **Terms of the report and names in the code.** The report uses descriptive terms. The code, the configs and the file
 names keep the short names of development. This table is all a reader needs to move between the two; the longer table
@@ -66,7 +66,7 @@ names keep the short names of development. This table is all a reader needs to m
 | six-refiner ensemble | `B6` (`refiner.members` of the config) |
 | seed mask | the candidate mask before the refiner |
 | area revert | `C0` |
-| order bonus | `decode.order_bonus` (`ORDp10` in file names: 0.10; `ORDp02`: 0.02) |
+| order bonus | `decode.order_bonus` (`ORDp20` in file names: 0.20; `ORDp10`: 0.10; `ORDp02`: 0.02). `NMS010` in file names: `decode.nms_iou` 0.10 (mask NMS) |
 | auxiliary U-Nets, auxiliary maps | `own2` (ResNet-34 and EfficientNetV2-S U-Nets at 2048 px) |
 | votes | Mask DINO R50 x 3 seeds, the eight features `v_*` (`filament_seg/votes.py`) |
 | refiners retrained on all training frames | full-data, `fullfit`, `FF` in file names |
@@ -82,18 +82,20 @@ recomputes every number of this table from the stored out-of-fold outputs; the s
 
 | quantity of the scoring rubric | final model (fold version), 707 training frames, OOF | one annotator against another, 296 frames with two or three records |
 |---|---|---|
-| panoptic quality PQ (score threshold fixed at 0.25) | **0.4759** | 0.340 |
-| segmentation quality SQ x recognition quality RQ | 0.688 x 0.691 | 0.634 x 0.536 |
-| matched (IoU > 0.5) / unmatched predictions / unmatched ground truth | 5,464 / 2,144 / 2,735 | 4,292 / 3,709 / 3,709 |
+| panoptic quality PQ (score threshold fixed at 0.25) | **0.4761** | 0.340 |
+| segmentation quality SQ x recognition quality RQ | 0.688 x 0.692 | 0.634 x 0.536 |
+| matched (IoU > 0.5) / unmatched predictions / unmatched ground truth | 5,462 / 2,135 / 2,737 | 4,292 / 3,709 / 3,709 |
 | mean Dice per annotator record (torchmetrics `DiceScore`) | 0.674 | 0.614 |
-| overlapping (ground truth, prediction) pairs: mean IoU / mean Dice | 0.616 / 0.745 (6,811 pairs) | 0.517 / 0.661 (6,862 pairs) |
-| one-to-many: ground-truth filaments overlapped by two or more predictions | 2.3 % | 3.2 % |
+| overlapping (ground truth, prediction) pairs: mean IoU / mean Dice | 0.616 / 0.746 (6,801 pairs) | 0.517 / 0.661 (6,862 pairs) |
+| one-to-many: ground-truth filaments overlapped by two or more predictions | 2.2 % | 3.2 % |
 | many-to-one: predictions that overlap two or more ground-truth filaments | 2.3 % | 3.2 % |
 | ground-truth filaments that no prediction overlaps | 19.4 % | 17.8 % |
 | predictions that overlap no ground-truth filament | 12.9 % | 17.8 % |
 
-On the same 296 frames the PQ of the model is 0.474. With the threshold chosen on the other four folds ("nested") and
-without the order bonus the PQ is 0.4753. The refiners raise the OOF PQ from 0.461 to 0.476.
+On the same 296 frames the PQ of the model is 0.475. With the threshold chosen on the other four folds ("nested") and
+the decode of `configs/final_fullfit.yaml` (no order bonus, mask NMS 0.3) the PQ is 0.4753 (0.4756 with the decode of the
+final model, measured with the development scripts). The refiners raise the OOF PQ
+from 0.461 to 0.476.
 
 | | value |
 |---|---|
@@ -101,19 +103,21 @@ without the order bonus the PQ is 0.4753. The refiners raise the OOF PQ from 0.4
 | inference cost per test frame | 34 GPU seconds in one end-to-end run on an RTX PRO 6000 (36 s wall-clock with the CPU stages; peak GPU memory 20 GB). On one RTX 4090 the per-stage timings sum to 43 GPU seconds: 105 forward passes of the candidate and helper models (37 s) and the six refiners (6 s) ("Inference cost") |
 | a single model at lower cost, not adopted | one Mask2Former: 6.5 GPU seconds per frame on the same RTX PRO 6000 model, nested OOF PQ 0.4760 against 0.4753, public leaderboard 0.40 ("Accuracy against cost") |
 
-**How the final model was chosen.** `configs/final_fullfit.yaml` is the same model with refiner seeds none / 11 / 12 and
-without the order bonus of the decode (public leaderboard also 0.41). The final model differs from it in these two
-settings only. Both are inside the noise of our validation: on the OOF frames the order bonus changes the PQ by
-+0.0001, and other refiner seeds move it by a standard deviation of 0.0002 to 0.0005. We chose between them by the
-order on the public leaderboard: the refiner seeds and an order bonus of 0.02 on 2026-11-14 (md5 `257bb97a...`), the
-bonus of 0.10 on 2026-11-15, when it ranked above the 0.02 version (four other one-setting variants
-submitted that day did not). We do not claim that the final model is better than `configs/final_fullfit.yaml`, and we
+**How the final model was chosen.** `configs/final_fullfit.yaml` is the same model with refiner seeds none / 11 / 12,
+without the order bonus and with mask NMS 0.3 in the decode (public leaderboard also 0.41). The final model differs from
+it in these three settings only. All are inside the noise of our validation: on the OOF frames the two decode settings
+change the PQ by +0.0003 (3 of 5 folds up), and other refiner seeds move it by a standard deviation of 0.0002 to 0.0005.
+We chose between them by the order on the public leaderboard: the refiner seeds and an order bonus of 0.02 on 2026-11-14
+(md5 `257bb97a...`), the bonus of 0.10 on 2026-11-15 (md5 `540c8863...`), when it ranked above the 0.02 version (four
+other one-setting variants submitted that day did not), and on 2026-11-16 the bonus of 0.20 and then mask NMS 0.1, each
+of which ranked above the best before it (three further one-setting variants submitted that day did not). We do not claim
+that the final model is better than `configs/final_fullfit.yaml`, and we
 expect no gain on the private part from this choice.
 
 ## Quick start
 
 `notebooks/demo.ipynb` is stored with the outputs of one complete run of its CPU path (macOS arm64, no GPU, 2 CPU
-threads, 341 s): the CSV it wrote is byte-identical to the final submission (md5 `540c886326cff3320dd341c0dedd2cd1`).
+threads, 353 s): the CSV it wrote is byte-identical to the final submission (md5 `86ff5b4a66347474e927eca1ec4e83bd`).
 
 ```
 git clone https://github.com/0122POND/solar-filament-seg && cd solar-filament-seg
@@ -123,11 +127,12 @@ python -m ipykernel install --sys-prefix --name solar-demo          # a kernel t
 export SOLAR_DATA=/path/to/MAGFiLO_1.0_Kaggle_2026                  # train/ and test/ as downloaded from Kaggle
 python -m nbconvert --to notebook --execute notebooks/demo.ipynb --output demo.out.ipynb \
     --ExecutePreprocessor.kernel_name=solar-demo --ExecutePreprocessor.timeout=3600
-md5sum out/demo/submission.csv                                      # 540c886326cff3320dd341c0dedd2cd1  (macOS: md5 -q)
+md5sum out/demo/submission.csv                                      # 86ff5b4a66347474e927eca1ec4e83bd  (macOS: md5 -q)
 ```
 
-We ran exactly these steps on 2026-11-15 on a new clone in an empty virtual environment (macOS arm64, no GPU): the
-notebook took 5 min 18 s and gave the same md5 and the out-of-fold PQ 0.4759 of "Results". The Hugging Face repository
+We ran exactly these steps on 2026-11-15, with the final model of that day (order bonus 0.10, mask NMS 0.3), on a new
+clone in an empty virtual environment (macOS arm64, no GPU): the notebook took 5 min 18 s and gave the md5 of that day's
+submission (`540c8863...`) and its out-of-fold PQ 0.4759. The Hugging Face repository
 was still private on that day, so the five files the notebook downloads (the stored outputs and the four selector
 files) were copied into `weights/` before the run. Name the kernel as above: with the default kernel name
 `python3`, Jupyter may start another Python installation that lacks the pinned packages.
@@ -150,7 +155,7 @@ command line, after the notebook has downloaded the files:
 export SOLAR_ROOT=$PWD/out/demo/cache
 python -m filament_seg --config configs/final_yellow.yaml final-cpu --load-weights weights/nlv --out final.csv   # selector + C0 + decode, about 3 min
 python -m filament_seg --config configs/final_yellow.yaml final-cpu --yhat-cached --out final.csv               # C0 + decode from the stored scores
-md5sum final.csv                                                                                                # 540c886326cff3320dd341c0dedd2cd1
+md5sum final.csv                                                                                                # 86ff5b4a66347474e927eca1ec4e83bd
 ```
 
 **GPU path (a CUDA GPU with 24 GB).** With a GPU the notebook downloads the 63 weight files and runs every model on the
@@ -160,10 +165,10 @@ in one kernel. If the packages conflict, use the commands of "Final model: stage
 gives the same filaments up to a few boundary pixels and a few candidates near the threshold, not the same bytes
 ("End-to-end run from the raw test frames").
 
-**Tests.** `pytest` runs the unit tests on a fresh clone without data (44 passed, 41 skipped in the CPU environment above;
-52 passed, 33 skipped with `requirements.txt`). The skipped tests need the packages of the GPU path or compare with the
+**Tests.** `pytest` runs the unit tests on a fresh clone without data (44 passed in the CPU environment above;
+52 passed, 34 skipped with `requirements.txt`). The skipped tests need the packages of the GPU path or compare with the
 submitted runs and need files that are not in Git; `pytest -rs` prints the reason for each one. With `SOLAR_ROOT` set as
-above, `pytest tests/test_golden_yellow.py` checks the final CSV (five of its seven tests run; "Tests").
+above, `pytest tests/test_golden_yellow.py` checks the final CSV (six of its eight tests run; "Tests").
 
 ## Names used in this repository
 
@@ -171,7 +176,7 @@ above, `pytest tests/test_golden_yellow.py` checks the final CSV (five of its se
 |---|---|
 | **final model** | `configs/final_yellow.yaml`: the configuration of the final submission. Nothing else is called "final model" |
 | **fold version** | the final model with five-fold refiners instead of the full-data ones; the version that has OOF numbers |
-| **full-data**, `fullfit` | a refiner trained on all 707 training frames (`residual --fold -1`) and applied to the five fold-specific inputs at test time. `configs/final_fullfit.yaml` is the final model with refiner seeds none / 11 / 12 and without the order bonus (public leaderboard 0.41) |
+| **full-data**, `fullfit` | a refiner trained on all 707 training frames (`residual --fold -1`) and applied to the five fold-specific inputs at test time. `configs/final_fullfit.yaml` is the final model with refiner seeds none / 11 / 12, without the order bonus and with mask NMS 0.3 (public leaderboard 0.41) |
 | **candidate** | one proposed filament mask, from the nnU-Net components or from Mask DINO Swin-L |
 | **NLv**, **selector**, **verifier**, **V-ENS** | the selector of the final model: four regressors (HistGradientBoosting, CatBoost, XGBoost, ExtraTrees) on 70 candidate features, combined by a rank average. The code and the older sections call it verifier or V-ENS. `filament_seg/nlv.py` |
 | **NNRP** | a refiner that reads, besides the frame, the candidate and the nnU-Net map, the best-overlapping masks of Mask DINO Swin-L 1536 and RF-DETR-Seg L (9 input channels) |
@@ -179,7 +184,7 @@ above, `pytest tests/test_golden_yellow.py` checks the final CSV (five of its se
 | **B6** | the refiner ensemble of the final model: three NNRP and three S15F members (different random seeds), equal-weight mean of their probabilities |
 | **C0** | a rule after the refiner: a Mask DINO candidate whose redrawn mask has less than 0.6 of its original area keeps the original mask ("area revert" in the report and in the figure above) |
 | **tau** | the score threshold of the decode (0.25 in the final model) |
-| **order bonus** | `decode.order_bonus: 0.10`: for the order of the decode only, 0.10 is added to the score of the Mask DINO candidates. The test "score > tau" uses the unchanged score |
+| **order bonus** | `decode.order_bonus: 0.20`: for the order of the decode only, 0.20 is added to the score of the Mask DINO candidates. The test "score > tau" uses the unchanged score |
 | **OOF**, out-of-fold | a training frame is predicted by models that did not see it (5 folds) |
 | **PQ**, **rec PQ**, **simulated PQ** | panoptic quality, the matching-based score of the competition. rec = against the annotator records as they are. simulated = after each ground-truth filament is dropped with probability 0.23 (5 draws), a rate calibrated on the public leaderboard scores of our earlier submissions |
 | **STK** | an alternative selector (`configs/stk.yaml`): NLv with a fourth voter and seven agreement / shape columns (80 features), averaged over five seeds. Better OOF, public leaderboard 0.40; not used by the final model |
@@ -199,8 +204,8 @@ tests, the decision log, reproducibility notes and licences.
 
 | | 707-frame 5-fold OOF PQ (tau 0.28) | simulated test PQ | public LB |
 |---|---|---|---|
-| **final model: NLv x full-data B6 + C0, order bonus 0.10** (`configs/final_yellow.yaml`, tau 0.25) | 0.4759 of the fold version with the bonus (nested 0.4753 without it) | 0.4144 | **0.41** |
-| the same with refiner seeds none / 11 / 12 and no order bonus (`configs/final_fullfit.yaml`, tau 0.25) | 0.4758 (nested 0.4753) of the fold version | 0.4142 | 0.41 |
+| **final model: NLv x full-data B6 + C0, order bonus 0.20, mask NMS 0.1** (`configs/final_yellow.yaml`, tau 0.25) | 0.4761 (nested 0.4756) of the fold version with this decode | 0.4146 | **0.41** |
+| the same with refiner seeds none / 11 / 12, no order bonus and mask NMS 0.3 (`configs/final_fullfit.yaml`, tau 0.25) | 0.4758 (nested 0.4753) of the fold version | 0.4142 | 0.41 |
 | NLv x B6 + C0, fold refiners (tau 0.25) | 0.4758 (nested 0.4753) | 0.4142 | 0.41 |
 | STK-avg5 + C0 + S15F (`configs/stk.yaml`) | **0.4767** (nested 0.4759) | 0.4171 | 0.40 |
 | STK-avg5 + C0 + NNRP (`configs/stk_nnrp.yaml`) | 0.4748 (nested 0.4741) | 0.4155 | 0.40 |
@@ -257,13 +262,13 @@ features):
 | candidates, votes, map features, verifier | NLv exactly as in "Minimal variant (NLv + NNR)" below: nnU-Net + Swin-L 1024 candidates, R50 seeds 0-2 votes, own2 map features, V-ENS on 70 features (one seed) | `filament_seg/nlv.py` |
 | refiner | B6 = six members, equal-weight probability mean: NNRP (9 planes) and S15F (9 planes + Swin-L 1536 features at stride 4), three seeds each (x16, x17, x18; `configs/final_fullfit.yaml` uses no seed, x11, x12), recipes of `configs/stk_nnrp.yaml` / `configs/s15f.yaml`. Each member is **retrained on the crops of all 707 frames** (`residual --fold -1 --member <tag>`, 39,314 rows instead of about 31,500, no held-out rows; inputs are the same OOF crops / planes / features as the fold models) | `refiner.train_residual`, `stages.stage_residual`, `stages.residual_rows` |
 | test-time refiner | each full-data refiner is applied to the five fold-k inputs (nnU-Net map, NNRP planes and S15F features of fold model k), flip TTA x 4, and the five probabilities are averaged, as for five fold models; mean over the six members = sum / (5 x 6) | `refiner.ensemble_members` (member `full: true`), `nlv.refiner_members`, `nlv.refine_test` |
-| C0, decode | C0 (ratio 0.6), tau 0.25, order bonus 0.10 (for the processing order only, 0.10 is added to the score of the Mask DINO Swin-L candidates; acceptance uses the unchanged score), mask NMS 0.3, no overlaps | `nlv.apply_c0`, `nlv.decode`, `nlv.DECODE_KNOBS` |
+| C0, decode | C0 (ratio 0.6), tau 0.25, order bonus 0.20 (for the processing order only, 0.20 is added to the score of the Mask DINO Swin-L candidates; acceptance uses the unchanged score), mask NMS 0.1, no overlaps | `nlv.apply_c0`, `nlv.decode`, `nlv.DECODE_KNOBS` |
 
 | number | value |
 |---|---|
 | public LB | **0.41** (also 0.41: seeds none / 11 / 12 without the bonus, and the fold version NLv x B6 + C0) |
-| OOF of the fold version (707 frames) | nested 0.4753 / rec tau 0.25 0.4758 / simulated 0.4142 (`oof-eval`); with the order bonus rec 0.4759 / simulated 0.4144 |
-| final CSV | `outputs/sub_NLv_FF6CC0_t025_ORDp10.csv` (in this repository), md5 `540c886326cff3320dd341c0dedd2cd1`, 1,209 filaments on 178 frames. Without the bonus: 1,210 filaments, md5 `678c248214a5a61210c7fe1c6fd0e65b`, 914 masks reset by C0; the bonus changes 164 of the 178 frames. With a bonus of 0.02 (our best public submission until 2026-11-14): `sub_NLv_FF6CC0_t025_ORDp02.csv`, 1,209 filaments, md5 `257bb97ad9cbe854007832b9725a3cff`; 146 of the 178 frames differ from the final CSV |
+| OOF of the fold version (707 frames) | nested 0.4753 / rec tau 0.25 0.4758 / simulated 0.4142 (`oof-eval`); with the decode of the final model (order bonus 0.20, mask NMS 0.1) nested 0.4756 / rec 0.4761 / simulated 0.4146 |
+| final CSV | `outputs/sub_NLv_FF6CC0_t025_ORDp20_NMS010.csv` (in this repository), md5 `86ff5b4a66347474e927eca1ec4e83bd`, 1,207 filaments on 178 frames, 914 masks reset by C0. With order bonus 0.10 and mask NMS 0.3 (our best public submission on 2026-11-15): `outputs/sub_NLv_FF6CC0_t025_ORDp10.csv` (in this repository), 1,209 filaments, md5 `540c886326cff3320dd341c0dedd2cd1`; 7 of the 178 frames differ from the final CSV. With mask NMS 0.3 and without the bonus: 1,210 filaments, md5 `678c248214a5a61210c7fe1c6fd0e65b`; 164 of the 178 frames differ from the final CSV. With mask NMS 0.3 and a bonus of 0.02 (our best public submission until 2026-11-14): `sub_NLv_FF6CC0_t025_ORDp02.csv`, 1,209 filaments, md5 `257bb97ad9cbe854007832b9725a3cff`; 147 of the 178 frames differ from the final CSV |
 | CSV of `configs/final_fullfit.yaml` | `sub_NLv_FF6C0_t025.csv`, md5 `31e0708424a321eb19d996a2a2868dcf`, 1,210 filaments on 178 frames (950 masks reset by C0) |
 | seeds 16-18 vs seeds none / 11 / 12 on the test (both without the bonus) | same 1,210 selected candidates; matched mask IoU mean 0.987 |
 | full-data (seeds none / 11 / 12) vs fold refiners on the test | same 1,210 selected candidates; matched mask IoU mean 0.986 (median 0.989); total area x 0.997 |
@@ -298,7 +303,7 @@ python -m filament_seg --config configs/final_yellow.yaml refine-test --weights 
 python -m filament_seg --config configs/final_yellow.yaml final-cpu --out final.csv                      # selector refitted + C0 + decode (4 min; the refit was checked with configs/final_fullfit.yaml)
 python -m filament_seg --config configs/final_yellow.yaml final-cpu --load-weights weights/nlv --out final.csv   # saved selector files (3 min)
 python -m filament_seg --config configs/final_yellow.yaml final-cpu --yhat-cached --out final.csv        # C0 + decode from the stored scores (under 1 min)
-python -m filament_seg --config configs/final_yellow.yaml oof-eval                                       # fold version with the order bonus, tau 0.25 (50 s)
+python -m filament_seg --config configs/final_yellow.yaml oof-eval                                       # fold version with the decode of the final model, tau 0.25 (50 s)
 ```
 
 The block above lists the stages that are subcommands of `python -m filament_seg` with this config. The earlier test-time
@@ -310,16 +315,16 @@ of the notebook).
 
 | check (`tests/test_golden_yellow.py`, `tests/test_decode_knobs.py`, `tests/test_golden_final.py`, `tests/test_fullfit_units.py`; macOS arm64) | result |
 |---|---|
-| decode of the stored NLv scores + test masks of the six seed 16-18 members, C0 and the order bonus applied in the repository | byte-identical to 540c8863; with `decode.order_bonus: 0.02` byte-identical to 257bb97a, with `decode.order_bonus: 0` to 678c2482 (914 masks reset by C0) |
-| `final-cpu --load-weights` with the saved selector files, reading only the stored outputs of `cache/final_cache_v1.tar` (test votes and map features rebuilt, 3.2 min) | CSV byte-identical to 540c8863 |
+| decode of the stored NLv scores + test masks of the six seed 16-18 members, C0, the order bonus and mask NMS 0.1 applied in the repository | byte-identical to 86ff5b4a; with `decode.nms_iou: 0.3` and `decode.order_bonus: 0.10` byte-identical to 540c8863, with `decode.order_bonus: 0.02` to 257bb97a, with `decode.order_bonus: 0` to 678c2482 (914 masks reset by C0) |
+| `final-cpu --load-weights` with the saved selector files, reading only the stored outputs of `cache/final_cache_v1.tar` (test votes and map features rebuilt, 3.8 min) | CSV byte-identical to 86ff5b4a |
 | `configs/final_fullfit.yaml`: decode of the stored NLv scores + full-data B6 test masks (seeds none / 11 / 12), C0 applied in the repository | byte-identical to 31e07084 (950 masks reset by C0) |
 | `configs/final_fullfit.yaml`: `final-cpu --load-weights` with the saved NLv members (test votes and map features rebuilt) | scores identical (max abs diff 0), CSV byte-identical |
 | `configs/final_fullfit.yaml`: `final-cpu`, V-ENS refitted on the OOF table (`GOLDEN_FINAL_FULL=1`) | scores identical, CSV byte-identical |
-| `oof-eval` (NLv OOF scores x B6 fold-refiner OOF masks, C0, tau 0.25) | rec 0.4759 / simulated 0.4144 with the order bonus (`configs/final_yellow.yaml`), 0.4758 / 0.4142 without (`configs/final_fullfit.yaml`) |
+| `oof-eval` (NLv OOF scores x B6 fold-refiner OOF masks, C0, tau 0.25) | rec 0.4761 / simulated 0.4146 with the decode of the final model (`configs/final_yellow.yaml`), 0.4758 / 0.4142 with no order bonus and mask NMS 0.3 (`configs/final_fullfit.yaml`) |
 | `configs/final_fullfit.yaml`: member mean + paste-back of the repository (`nlv.member_sum_mean`, `nlv.paste_refined`) on the per-member test probability sums of the development run (6 x 10,189 candidates, CPU) | 10,189 / 10,189 refined masks identical; the pickle is byte-identical (md5 d67c36ca) to the one the CSV 31e07084 was built from |
 | full-data member = mean of one checkpoint over the five fold inputs; member mean = sum / (K x M) (synthetic, CPU) | exact |
-| `notebooks/demo.ipynb` with `PIPELINE = "final"` (macOS arm64, no GPU, 2 CPU threads; stored outputs of `cache/final_cache_v1.tar`, saved selector files; the outputs of this run are stored in the notebook) | CSV byte-identical to 540c8863 (scores max abs diff 0 against the stored ones, 914 masks reset by C0), `oof-eval` rec 0.4759 / simulated 0.4144, the rubric numbers of "Results"; 341 s |
-| `refine-test` with the six seed 16-18 members (`configs/final_yellow.yaml`, each full-data refiner x 5 fold-k inputs, all 10,189 test candidates / 180 frames, GTX 1080 Ti, 58 min) | the pickle is byte-identical (md5 23346b75) to the one the final CSV was built from; C0 + decode -> CSV byte-identical to 540c8863 |
+| `notebooks/demo.ipynb` with `PIPELINE = "final"` (macOS arm64, no GPU, 2 CPU threads; stored outputs of `cache/final_cache_v1.tar`, saved selector files; the outputs of this run are stored in the notebook) | CSV byte-identical to 86ff5b4a (scores max abs diff 0 against the stored ones, 914 masks reset by C0), `oof-eval` rec 0.4761 / simulated 0.4146, the rubric numbers of "Results"; 353 s |
+| `refine-test` with the six seed 16-18 members (`configs/final_yellow.yaml`, each full-data refiner x 5 fold-k inputs, all 10,189 test candidates / 180 frames, GTX 1080 Ti, 58 min) | the pickle is byte-identical (md5 23346b75) to the one the final CSV was built from; C0 + decode of this pickle -> CSV byte-identical to 86ff5b4a |
 | `configs/final_fullfit.yaml`: `refine-test` with its six full-data members (each full-data refiner x 5 fold-k inputs, all 10,189 test candidates / 180 frames, GTX 1080 Ti, 57 min) | 10,189 / 10,189 refined masks identical; the pickle is byte-identical (md5 d67c36ca); C0 (950 reset, C0 masks identical) + decode with NLv tau 0.25 -> CSV byte-identical to 31e07084 |
 
 Not run in this repository: the full-data training itself (`residual --fold -1`, ported from the development script
@@ -350,7 +355,7 @@ and `configs/stk.yaml`, whose stored outputs are not in the archive of the CPU p
 them, or use the GPU path). Paths: `SOLAR_DATA` (competition data), `SOLAR_WEIGHTS` (default `weights/`), `SOLAR_OUT`
 (default `out/demo`; the archive is unpacked to `out/demo/cache`).
 
-What the stored run covers (macOS arm64, no GPU, 341 s; the first markdown cell of the notebook says the same):
+What the stored run covers (macOS arm64, no GPU, 353 s; the first markdown cell of the notebook says the same):
 the CPU path was executed and gave the final CSV byte for byte. The GPU branches were not executed in the notebook; the
 same stages were run from the command line (table above and "End-to-end run"). The download function ran with the files
 already in place (sizes and sha256 verified), so the HTTP transfer itself is not part of the stored run. The training
@@ -366,11 +371,13 @@ stages from the 180 JPEG frames on one RTX PRO 6000 Blackwell (the code of 2026-
 This GPU needs CUDA 12.8 builds, so the packages are newer than the pinned ones (torch 2.7.1 + cu128, rfdetr 1.12.0,
 numpy 2.5 / pandas 3.0 in the CPU environment; scikit-learn, CatBoost and XGBoost as pinned). Result: 10,190 candidates
 (submitted run 10,189). The chain ran with the order bonus of that day, 0.02 (CSV of 1,207 filaments, md5 `cdcb378f...`).
-On 2026-11-15 we repeated its last stage (selector, C0, decode; CPU, 3.8 min) on the stored outputs of the chain with the
-final order bonus 0.10: a CSV of 1,207 filaments on 178 frames (md5 `7787446c...`, **not byte-identical** to the final
-submission, as expected with other builds). 1,207 of the 1,209 submitted filaments have a partner at IoU >= 0.9 in it
-(mean IoU 0.9989), 584 masks are identical, and the Dice of the two pixel unions is 0.997. The timings of the chain are
-in "Inference cost". Neither CSV was submitted.
+On 2026-11-16 we repeated its last stage (selector, C0, decode; CPU, 3.9 min) on the stored outputs of the chain with the
+decode of the final model (order bonus 0.20, mask NMS 0.1): a CSV of 1,205 filaments on 178 frames (md5 `79b5789c...`,
+**not byte-identical** to the final submission, as expected with other builds). 1,205 of the 1,207 submitted filaments
+have a partner at IoU >= 0.9 in it (mean IoU 0.9989), 583 masks are identical, and the Dice of the two pixel unions is
+0.997. With the decode of 2026-11-15 (order bonus 0.10, mask NMS 0.3) the same comparison gave 1,207 of the 1,209
+filaments of that day's submission (584 identical, md5 `7787446c...`). The timings of the chain are in "Inference cost".
+None of these CSVs was submitted.
 
 One fresh run of every test-time stage from the 180 JPEG frames with the code of this repository and the published weights,
 on one RTX 4090 (Linux, torch 2.6.0 + CUDA 12.4), compared with the CSV of that configuration (31e07084). The stages were run one after
@@ -570,7 +577,7 @@ S15F was chosen on the same OOF as the earlier refiners (nested +0.0017 over NNR
 
 NLv + NNR (`configs/nlv.yaml`, public LB 0.40) is the smallest pipeline of this family: the candidates, votes, map features
 and selector of the final model with one five-fold refiner (NNR) and tau 0.28. The final model replaces NNR by the six
-full-data refiners and adds C0 and the order bonus.
+full-data refiners, adds C0 and the order bonus, and lowers the mask NMS threshold from 0.3 to 0.1.
 
 | component | model | module |
 |---|---|---|
@@ -818,14 +825,14 @@ $SOLAR_DATA/../gong_unlabeled/*.jpg     # written by `python -m filament_seg gon
 
 ## Tests
 
-`pytest` runs the unit tests (no data needed; on a fresh clone: 52 passed, 33 skipped with `requirements.txt`, 44 passed,
-41 skipped with `requirements-cpu.txt`, where the unit tests of the GPU path are skipped too). The golden tests compare with the
+`pytest` runs the unit tests (no data needed; on a fresh clone: 52 passed, 34 skipped with `requirements.txt`; 44 passed
+with `requirements-cpu.txt`, where the unit tests of the GPU path are skipped too). The golden tests compare with the
 submitted runs. They need the stored model outputs (`SOLAR_ROOT`) and are skipped without them (the config comparison of
 `tests/test_golden_yellow.py` needs no files and always runs); `pytest -rs` prints what each one needs.
 
 | test file | checks |
 |---|---|
-| `tests/test_golden_yellow.py` | the final model: CSV 540c8863, 257bb97a with an order bonus of 0.02 and 678c2482 with the bonus off; saved selector files; `oof-eval` 0.4759 / 0.4144. With `SOLAR_ROOT` = the unpacked `cache/final_cache_v1.tar`, five of its seven tests run (the stored CSVs, the config difference, the decode with an order bonus of 0.10, 0.02 and 0); the other two need the selector files under `$SOLAR_ROOT/outputs/nlv_weights` and the annotator records, and the notebook runs the same two checks |
+| `tests/test_golden_yellow.py` | the final model: CSV 86ff5b4a; with mask NMS 0.3, 540c8863 with an order bonus of 0.10, 257bb97a with 0.02 and 678c2482 with the bonus off; saved selector files; `oof-eval` 0.4761 / 0.4146. With `SOLAR_ROOT` = the unpacked `cache/final_cache_v1.tar`, six of its eight tests run (the stored CSVs, the config difference, the decode of the final model, and the decode with mask NMS 0.3 and an order bonus of 0.10, 0.02 and 0); the other two need the selector files under `$SOLAR_ROOT/outputs/nlv_weights` and the annotator records, and the notebook runs the same two checks |
 | `tests/test_decode_knobs.py` | the decode settings (`nlv.DECODE_KNOBS`, order bonus) on synthetic masks |
 | `tests/test_golden_final.py`, `tests/test_fullfit_units.py` | `configs/final_fullfit.yaml` (31e07084) and the full-data refiner path |
 | `tests/test_golden_stk.py`, `tests/test_s15f_units.py`, `tests/test_stk_units.py` | STK-avg5 + C0 + S15F (a2089e62) and the earlier STK-avg5 + C0 + NNRP (25ac8b05); the S15F feature path, the refiner member ensemble, config includes, the rubric metrics |
@@ -837,8 +844,8 @@ submitted runs. They need the stored model outputs (`SOLAR_ROOT`) and are skippe
 ## Decision log
 
 `docs/decisions.tsv` lists the ideas we tried on the base pipeline and, in its last rows, the decisions on the final
-model up to 2026-11-15. For each idea it gives the acceptance gate where one was written before the run (25 of the
-41 rows; "-" marks an idea that was only compared with the baseline of the time (15 rows), "diagnostic" a measurement
+model up to 2026-11-16. For each idea it gives the acceptance gate where one was written before the run (25 of the
+42 rows; "-" marks an idea that was only compared with the baseline of the time (16 rows), "diagnostic" a measurement
 without a gate (1 row)), the result and the decision.
 The report lists the other ideas tried on the final model.
 An earlier final candidate used the public U-Net ensemble of another participant as an extra input. The final model
@@ -865,7 +872,8 @@ does not use it, and this repository contains no part of it. The rows measured o
   byte-identical. Together with the rounding-level differences of the dense maps, a fresh GPU run therefore reproduces
   1,206 of the 1,210 filaments of `configs/final_fullfit.yaml` (1,057 with identical masks), not the bytes of the CSV
   ("End-to-end run from the raw test frames"). The same kind of run with `configs/final_yellow.yaml` (another GPU, newer
-  builds) reproduced 1,207 of the 1,209 submitted filaments at IoU >= 0.9 (584 identical masks).
+  builds; last stage repeated with the final decode) reproduced 1,205 of the 1,207 submitted filaments at IoU >= 0.9
+  (583 identical masks).
 
 ## License and citation
 

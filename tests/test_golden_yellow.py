@@ -1,13 +1,15 @@
-"""Final model configs/final_yellow.yaml (NLv x full-data B6 with refiner seeds 16 / 17 / 18 + C0 + order bonus 0.10): the CPU stages
-reproduce sub_NLv_FF6CC0_t025_ORDp10.csv (md5 540c8863..., public LB 0.41) byte for byte.
+"""Final model configs/final_yellow.yaml (NLv x full-data B6 with refiner seeds 16 / 17 / 18 + C0 + order bonus 0.20 + mask NMS 0.1):
+the CPU stages reproduce sub_NLv_FF6CC0_t025_ORDp20_NMS010.csv (md5 86ff5b4a..., public LB 0.41) byte for byte.
 
 Inputs are the cached model outputs of the run (section `nlv` of the config; SOLAR_ROOT). Skipped when missing (except the config test).
-  1. decode only: stored NLv scores + test masks of the six seed 16-18 members (before C0), C0 and the order bonus applied
-     here -> CSV (under 1 min)
-  2. the same with decode.order_bonus 0 -> sub_NLv_FF6CC0_t025.csv (md5 678c2482...), i.e. the bonus is the only difference
+  1. decode only: stored NLv scores + test masks of the six seed 16-18 members (before C0), C0, the order bonus and mask NMS 0.1
+     applied here -> CSV (under 1 min)
+  2. the same with decode.nms_iou 0.3 and decode.order_bonus 0.10 -> sub_NLv_FF6CC0_t025_ORDp10.csv (md5 540c8863..., our best public
+     score on Nov 15), 0.02 -> sub_NLv_FF6CC0_t025_ORDp02.csv (md5 257bb97a...), 0 -> sub_NLv_FF6CC0_t025.csv (md5 678c2482...),
+     i.e. the two decode settings are the only difference
   3. saved NLv V-ENS members (Hugging Face nlv/), test votes and map features rebuilt -> CSV identical (3 min)
   4. oof-eval of the fold version (B6 fold refiners, seeds none / 11 / 12; the seed 16-18 members have no fold version)
-     with the order bonus: rec 0.4759 / simulated 0.4144 (without the bonus 0.4758 / 0.4142)
+     with the two decode settings: rec 0.4761 / simulated 0.4146 (with the decode of configs/final_fullfit.yaml 0.4758 / 0.4142)
 The decode settings themselves (order_bonus, iom_max) are unit-tested on synthetic masks in tests/test_decode_knobs.py.
 Not covered here: the six seed 16-18 checkpoints -> test masks (refine-test on the GPU; README).
 final-cpu runs in a subprocess (CatBoost / XGBoost segfault on macOS next to torch).
@@ -27,10 +29,12 @@ REPO = Path(__file__).resolve().parents[1]
 CFG_PATH = REPO / "configs" / "final_yellow.yaml"
 CFG = config.load(CFG_PATH)
 C = nlv.resolve(CFG)
-YELLOW_MD5 = "540c886326cff3320dd341c0dedd2cd1"      # order_bonus 0.10 (the final submission)
-BONUS_002_MD5 = "257bb97ad9cbe854007832b9725a3cff"   # order_bonus 0.02 (our best public score until Nov 14)
-NO_BONUS_MD5 = "678c248214a5a61210c7fe1c6fd0e65b"    # order_bonus 0
-NEEDED = ("test_cands", "test_rles", "refiner_rles", "yhat", "submitted_csv", "submitted_csv_bonus_002", "submitted_csv_no_bonus")
+YELLOW_MD5 = "86ff5b4a66347474e927eca1ec4e83bd"      # order_bonus 0.20, nms_iou 0.10 (the final submission)
+PREV_MD5 = "540c886326cff3320dd341c0dedd2cd1"        # order_bonus 0.10, nms_iou 0.3 (our best public score on Nov 15)
+BONUS_002_MD5 = "257bb97ad9cbe854007832b9725a3cff"   # order_bonus 0.02, nms_iou 0.3 (our best public score until Nov 14)
+NO_BONUS_MD5 = "678c248214a5a61210c7fe1c6fd0e65b"    # order_bonus 0, nms_iou 0.3
+NEEDED = ("test_cands", "test_rles", "refiner_rles", "yhat", "submitted_csv", "submitted_csv_prev", "submitted_csv_bonus_002",
+          "submitted_csv_no_bonus")
 needs_cache = pytest.mark.skipif(not all(Path(C[k]).exists() for k in NEEDED), reason="cached model outputs not found (set SOLAR_ROOT)")
 
 
@@ -46,13 +50,14 @@ def _run(tmp_path, cfg_path, stage, *flags):
 @needs_cache
 def test_reference_csvs():
     assert hashlib.md5(Path(C["submitted_csv"]).read_bytes()).hexdigest() == YELLOW_MD5
+    assert hashlib.md5(Path(C["submitted_csv_prev"]).read_bytes()).hexdigest() == PREV_MD5
     assert hashlib.md5(Path(C["submitted_csv_bonus_002"]).read_bytes()).hexdigest() == BONUS_002_MD5
     assert hashlib.md5(Path(C["submitted_csv_no_bonus"]).read_bytes()).hexdigest() == NO_BONUS_MD5
 
 
-def test_config_differs_from_final_fullfit_in_members_and_bonus_only():
+def test_config_differs_from_final_fullfit_in_members_bonus_and_nms_only():
     base = config.load(REPO / "configs" / "final_fullfit.yaml")
-    assert CFG["decode"] == {**base["decode"], "order_bonus": 0.10} and nlv.decode_knobs(base) == nlv.DECODE_KNOBS
+    assert CFG["decode"] == {**base["decode"], "order_bonus": 0.20, "nms_iou": 0.10} and nlv.decode_knobs(base) == nlv.DECODE_KNOBS
     mem = CFG["refiner"]["members"]
     assert [m["tag"] for m in mem] == [f"FF{t}x{s}" for t in ("NNRP", "S15F") for s in (16, 17, 18)]
     assert [m["seed"] for m in mem] == [16, 17, 18] * 2 and all(m["full"] for m in mem)
@@ -62,20 +67,29 @@ def test_config_differs_from_final_fullfit_in_members_and_bonus_only():
     same = set(CFG) - {"decode", "refiner", "nlv", "paths"}
     assert all(CFG[k] == base[k] for k in same) and set(CFG) == set(base)
     diff = {k for k in set(CFG["nlv"]) | set(base["nlv"]) if CFG["nlv"].get(k) != base["nlv"].get(k)}
-    assert diff == {"refiner_rles", "submitted_csv", "submitted_csv_bonus_002", "submitted_csv_no_bonus"}
+    assert diff == {"refiner_rles", "submitted_csv", "submitted_csv_prev", "submitted_csv_bonus_002", "submitted_csv_no_bonus"}
 
 
 @needs_cache
 def test_decode_with_c0_and_order_bonus_byte_identical(tmp_path):
     out, res = _run(tmp_path, CFG_PATH, "final-cpu", "--yhat-cached")
-    assert res["md5"] == YELLOW_MD5 and res["rows"] == 1209 and res["c0_replaced"] == 914
+    assert res["md5"] == YELLOW_MD5 and res["rows"] == 1207 and res["c0_replaced"] == 914
     assert out.read_bytes() == Path(C["submitted_csv"]).read_bytes()
+
+
+@needs_cache
+def test_settings_of_nov_15_give_the_previous_best(tmp_path):
+    cfgp = tmp_path / "prev.yaml"
+    cfgp.write_text(f"include: [{CFG_PATH}]\ndecode:\n  order_bonus: 0.10\n  nms_iou: 0.3\n")
+    out, res = _run(tmp_path, cfgp, "final-cpu", "--yhat-cached")
+    assert res["md5"] == PREV_MD5 and res["rows"] == 1209 and res["c0_replaced"] == 914
+    assert out.read_bytes() == Path(C["submitted_csv_prev"]).read_bytes()
 
 
 @needs_cache
 def test_order_bonus_002_is_the_previous_best(tmp_path):
     cfg2 = tmp_path / "bonus_002.yaml"
-    cfg2.write_text(f"include: [{CFG_PATH}]\ndecode:\n  order_bonus: 0.02\n")
+    cfg2.write_text(f"include: [{CFG_PATH}]\ndecode:\n  order_bonus: 0.02\n  nms_iou: 0.3\n")
     out, res = _run(tmp_path, cfg2, "final-cpu", "--yhat-cached")
     assert res["md5"] == BONUS_002_MD5 and res["rows"] == 1209 and res["c0_replaced"] == 914
     assert out.read_bytes() == Path(C["submitted_csv_bonus_002"]).read_bytes()
@@ -84,7 +98,7 @@ def test_order_bonus_002_is_the_previous_best(tmp_path):
 @needs_cache
 def test_order_bonus_zero_is_the_plain_decode(tmp_path):
     cfg0 = tmp_path / "no_bonus.yaml"
-    cfg0.write_text(f"include: [{CFG_PATH}]\ndecode:\n  order_bonus: 0.0\n")
+    cfg0.write_text(f"include: [{CFG_PATH}]\ndecode:\n  order_bonus: 0.0\n  nms_iou: 0.3\n")
     out, res = _run(tmp_path, cfg0, "final-cpu", "--yhat-cached")
     assert res["md5"] == NO_BONUS_MD5 and res["rows"] == 1210 and res["c0_replaced"] == 914
     assert out.read_bytes() == Path(C["submitted_csv_no_bonus"]).read_bytes()
@@ -104,5 +118,5 @@ def test_oof_eval_fold_version_with_order_bonus(tmp_path):
     need = [C["oof_refiner_rles"].format(k=k) for k in range(5)] + [C[k] for k in ("oof_yhat", "gt_rles", "train_cands", "train_rles")]
     if not all(Path(p).exists() for p in need):
         pytest.skip("OOF masks / scores / annotator records not found")
-    _, res = _run(tmp_path, CFG_PATH, "oof-eval")   # without the bonus (configs/final_fullfit.yaml): 0.4758 / 0.4142
-    assert (res["tau"], res["frames"], res["rec_pq"], res["sim_pq"]) == (0.25, 707, 0.4759, 0.4144)
+    _, res = _run(tmp_path, CFG_PATH, "oof-eval")   # with the decode of configs/final_fullfit.yaml: 0.4758 / 0.4142
+    assert (res["tau"], res["frames"], res["rec_pq"], res["sim_pq"]) == (0.25, 707, 0.4761, 0.4146)

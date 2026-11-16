@@ -1,6 +1,6 @@
 """NLv + NNR (configs/nlv.yaml): the CPU stages (verifier table, V-ENS, decode) and the stage `final-cpu`. The final model
 (configs/final_yellow.yaml) uses the same candidates, votes, map features, verifier and decode; it differs in the refiner
-(six full-data members), the C0 rule, tau 0.25 and the order bonus, all switched on by its config.
+(six full-data members), the C0 rule, tau 0.25, the order bonus and mask NMS 0.1, all set by its config.
 
 Stage order of NLv + NNR (GPU stages produce the cached model outputs read here):
   1. candidates  nnU-Net map components (thresholds 0.3 / 0.4, area >= 50; filament_seg/nnunet_cands.py) united with the
@@ -14,7 +14,7 @@ Stage order of NLv + NNR (GPU stages produce the cached model outputs read here)
                  are turned into rank / N, averaged and mapped to the quantiles of the HistGradientBoosting scores;
                  the five values of a candidate (one per fold map) are averaged -> yhat.
   5. refiner     NNR: residual U-Net r34 with a 7th input plane = nnU-Net map (filament_seg/refiner.py, plane7 nnunet).
-  6. decode      candidates with yhat > tau (0.28; final model 0.25) in decreasing yhat, mask NMS (IoU <= 0.3 with every kept mask), then
+  6. decode      candidates with yhat > tau (0.28; final model 0.25) in decreasing yhat, mask NMS (IoU <= 0.3 with every kept mask; final model 0.1), then
                  pixels already owned are removed and a mask keeping < 50 % of its pixels is dropped (no overlaps).
                  Optional settings of the config section `decode` (DECODE_KNOBS, all off by default): order_bonus
                  (configs/final_yellow.yaml) and iom_max.
@@ -251,7 +251,7 @@ def apply_c0(cands: pd.DataFrame, refined: dict, raw: dict, ratio: float = 0.6) 
 # config is unchanged. A new setting is one entry here plus one keyword of decode_image; decode_knobs passes it on from the
 # config to the test decode (stage_final_cpu) and to the OOF decode (oof_eval), so the two cannot drift apart.
 #   order_bonus  added to yhat of the Mask DINO Swin-L candidates (source 'yolo') for the processing ORDER only; the
-#                acceptance test yhat > tau uses the unchanged yhat (configs/final_yellow.yaml: 0.10)
+#                acceptance test yhat > tau uses the unchanged yhat (configs/final_yellow.yaml: 0.20)
 #   iom_max      extra suppression next to mask NMS: a mask whose intersection with an already kept mask exceeds
 #                iom_max x the smaller of the two areas is dropped (None = off)
 # Settings that already exist elsewhere: decode.nms_iou (mask NMS), decode.keep_frac, refiner.c0_ratio (C0) and
